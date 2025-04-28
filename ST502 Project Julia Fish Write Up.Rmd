@@ -1,0 +1,409 @@
+---
+title: "ST502 Project Julia Fish"
+author: "Julia Fish"
+date: "2025-03-04"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Part 3: Bootstrapping
+
+We will use bootstrap to find an approximate standard deviation of the MLE:
+
+
+First, we will plug in the values that were given in the write up. That is, the counts for the observed data as well as defining the functions for log likelihood and the mle that will be used throughout this problem:
+
+```{r begin}
+# counts of each type
+st_g <- 1195
+st_w <- 750
+su_g <- 729
+su_w <- 326
+
+# log-likelihood function
+log_like <- function(tha, st_g, st_w, su_g, su_w) {
+  if (tha <= 0 || tha >= 1) return(-Inf)
+  
+  res <- st_g * log((2 + tha) / 4) +
+        st_w * log((1 - tha) / 4) +
+        su_g * log((1 - tha) / 4) +
+        su_w * log(tha / 4)
+  
+  return(res)
+}
+
+# mle function
+mle <- function(st_g, st_w, su_g, su_w) {
+  rslt <- optim(par = 0.5, fn = function(tha) -log_like(tha, st_g, st_w, su_g, su_w),
+                lower = 0.001, upper = 0.999, method = "L-BFGS-B")
+  return(rslt$par)
+}
+
+# mle from observed data
+obs_mle <- mle(st_g, st_w, su_g, su_w)
+cat("MLE of theta for observed data:", obs_mle, "\n")
+
+
+```
+
+Lastly, the value for the mle from the observed data given in the write up was calculated to be around 0.2336875. This is approximately what we calculated by hand.
+
+
+
+We will first consider non-parametric bootstrapping. To begin, we create a function that takes in all the counts of each group as well as the amount of resamples we wish to take. Then, a data set with all of the values for each group is created in order to take samples. Then, a sample with replacement occurs with this full observed data et, and the counts for each group is measured, and the mle is calculated for this sample. This is repeated the amount of times specified in the function (with default value 1000). Lastly, the function outputs the standard deviation of this estimated mle. This process is shown in the code below:
+
+
+```{r non}
+set.seed(34)
+
+# nonparametric function
+nonp_bstr <- function(st_g, st_w, su_g, su_w, n_bstr = 1000) {
+  
+  # empty vector of length n_bstr
+  mle_vals <- numeric(n_bstr)
+
+  
+  # full data frame for observed data
+  observed_data <- c(rep("st_g", st_g), rep("st_w", st_w), rep("su_g", su_g), rep("su_w", su_w))
+  
+  for (i in 1:n_bstr) {
+    # resample from observed counts with replacement
+    sampled_data <- sample(observed_data, size = length(observed_data), replace = TRUE)
+    
+    # sum of each type per resample
+    st_g_res <- sum(sampled_data == "st_g")
+    st_w_res <- sum(sampled_data == "st_w")
+    su_g_res <- sum(sampled_data == "su_g")
+    su_w_res <- sum(sampled_data == "su_w")
+    
+    # compute each mle
+    mle_vals[i] <- mle(st_g_res, st_w_res, su_g_res, su_w_res)
+  }
+  
+  return(mle_vals)
+}
+
+# Call the nonparametric bootstrap function
+bstr_mle <- mean(nonp_bstr(st_g, st_w, su_g, su_w, n_bstr = 1000))
+bstr_sd <- sd(nonp_bstr(st_g, st_w, su_g, su_w, n_bstr = 1000))
+
+c(nonp_mle=bstr_mle, nonp_sd=bstr_sd)
+
+```
+
+That function was used with the observed data given in the write up, and this approximated mle is 0.23325 with am estimated standard deviation of 0.01073. Both of these values are close to the values calculated by hand (0.23369 and 0.01070).
+
+
+
+For parametric bootstrapping, the process is similar. To start, a function is created that takes the count data, the observed mle from that count data, and the amount of times that this resampling should take place (with a default of 1000). Then, simulated data is created based on sampling from a multinomial distribution with the probabilities given in the write up. With that simulated data, the mle is calculated. This is repeated as many times as input into the function (with a default of 1000). Lastly, the standard deviation of these values is calculated after all of the desires estimated mle values are derived.
+
+```{r para}
+# parametric
+p_bstr <- function(st_g, st_w, su_g, su_w, obs_mle, n_bstr = 1000) {
+  bstr_mle <- numeric(n_bstr)
+  
+  for (i in 1:n_bstr) {
+    # simulate new dataset based on mle
+    sim_data <- rmultinom(1, size = 3000, prob = c((2 + obs_mle)/4,
+                                                   (1 - obs_mle)/4,
+                                                   (1 - obs_mle)/4,
+                                                   obs_mle/4))
+    
+    # calculate approximate mle
+    bstr_mle[i] <- mle(sim_data[1], sim_data[2], sim_data[3], sim_data[4])
+  }
+  
+  return(bstr_mle)
+}
+
+# Run the parametric bootstrap
+mle_pbstr <- mean(p_bstr(st_g, st_w, su_g, su_w, obs_mle))
+sd_pbstr <- sd(p_bstr(st_g, st_w, su_g, su_w, obs_mle))
+
+c(p_mle=mle_pbstr,p_sd=sd_pbstr)
+
+```
+
+For parametric bootstrapping, the estimated mle value is around 0.23410 with a standard deviation of around 0.01351. That is similar to both the values by hand and from the nonparametric bootstrapping.
+
+
+
+With this in mind, non-parametric bootstrapping is favorable, in my opinion, This is because all 3 of the methods to find a standard deviation provided very similar results. As a result of this, the method that assumed the least amount of information is the favorable one due to achieving almost exact values with fewer assumptions needed. Since non-parametric bootstrapping was the only method that did not rely on the cell probabilities being as they were listed in the write up, that method is the strongest in this case.
+
+
+## Part 4: MCMC
+
+Next, we will use a standard uniform prior for theta in order to do MCMC on the posterior distribution. This provides the framework to estimate theta as well as the standard deviation for this estimate.
+
+
+We start by defining the Metropolis-Hastings function. This is the method for MCMC that we will be using in this example due to its higher flexibility. This function takes the number of iterations, the desired start values for theta and the standard deviation, and the number of occurrences of each group. Then, for each iteration, the new theta value is compared against the previous theta value (starting at the propose start value). If this is within the acceptance ratio (subtracted due to dealing with logs), then the new value is accepted and becomes the new comparison value. If i is not in this region, the previous theta value remains the value in which to be compared. This continues for all iterations, and the theta vector is returned. This is demonstrated below:
+
+```{r trying}
+# Met-Hast function for this example
+mcmc_methast <- function(n_iter, thetastartval, proposal_sd, n1, n2, n3, n4) {
+  thetas <- numeric(n_iter)
+  thetas[1] <- thetastartval
+  for (i in 2:n_iter) {
+    tha_new <- rnorm(1, thetas[i-1], proposal_sd)
+    if (tha_new >= 0 && tha_new <= 1) {
+      log_accrat <- log_like(tha_new,
+                                       st_g = st_g,
+                                       st_w = st_w,
+                                       su_g = su_g,
+                                       su_w = su_w) - log_like(thetas[i-1],
+                                                               st_g = st_g,
+                                                               st_w = st_w,
+                                                               su_g = su_g,
+                                                               su_w = su_w)
+      if (log(runif(1)) < log_accrat) {
+        thetas[i] <- tha_new
+      } else {
+        thetas[i] <- thetas[i-1]
+      }
+    } 
+    else {
+      thetas[i] <- thetas[i-1]
+    } # if not acceptable theta value, it is skipped over
+  } # ends for loop
+  return(thetas)
+}
+
+
+```
+
+
+Now, we will use the Metropolis Hastings function with varying starting theta and proposed standard deviation values. From these, we will gather an estimated theta value, an estimated standard deviation, and 95% credible intervals.
+
+```{r trying the most}
+
+# rep 1: run mcmc
+mcmc_samples <- mcmc_methast(50000, 0.5, 0.05, st_g, st_w, su_g, su_w)
+
+
+# burn in
+mcmc_samples_burnin <- mcmc_samples[5001:length(mcmc_samples)]
+
+
+# plot the posterior
+hist(mcmc_samples_burnin, 
+     main="Posterior Distribution of theta (start val = 0.5, sd = 0.05)", 
+     xlab="theta", 
+     breaks=30,
+     col="lightblue",
+     border="black",
+     probability=TRUE)
+
+# Add a density line to the histogram
+lines(density(mcmc_samples_burnin), col="red", lwd=2)
+
+mean_theta <- mean(mcmc_samples)
+sd_theta <- sd(mcmc_samples)
+cred_low <- (mean_theta-1.96*sd_theta)
+cred_high <- (mean_theta+1.96*sd_theta)
+c(theta=mean_theta, stdv=sd_theta, cred_lo=cred_low, cred_hi = cred_high)
+
+```
+
+This histogram as well as the estimated theta value, standard deviation, and 95% credible interval listed immediately above are for an starting theta value of 0.5 as well as a standard deviation of 0.05. Though the estimated standard deviation (and accompanying credible interval) are slightly larger, that is very likely due to starting somewhat far away from the estimated theta value of around 0.233. In any case, these values are all still similar to the findings of all other methods for these derivations.
+
+
+
+
+```{r different value}
+
+# rep 2: run MCMC
+mcmc_samples <- mcmc_methast(50000, 0.1, 0.05, st_g, st_w, su_g, su_w)
+
+# burn in
+mcmc_samples_burnin <- mcmc_samples[5001:length(mcmc_samples)]
+
+
+# plot the posterior
+hist(mcmc_samples_burnin, 
+     main="Posterior Distribution of theta (start val = 0.1, sd = 0.05)", 
+     xlab="theta", 
+     breaks=30,
+     col="blue",
+     border="black",
+     probability=TRUE)
+
+# add a density line
+lines(density(mcmc_samples_burnin), col="red", lwd=2)
+
+
+mean_theta <- mean(mcmc_samples)
+sd_theta <- sd(mcmc_samples)
+cred_low <- (mean_theta-1.96*sd_theta)
+cred_high <- (mean_theta+1.96*sd_theta)
+c(theta=mean_theta, stdv=sd_theta, cred_lo=cred_low, cred_hi = cred_high)
+
+```
+
+These values above are for a staring theta value of 0.1 with the same standard deviation as the last derivation (0.05). The standard deviation and range of the resulting credible interval are smaller than the first calculation, which is most likely due to starting closer to the perceived true theta value.
+
+
+
+```{r different value again}
+
+# rep 3: run mcmc
+mcmc_samples <- mcmc_methast(50000, 0.1, 0.1, st_g, st_w, su_g, su_w)
+
+# burn in
+mcmc_samples_burnin <- mcmc_samples[5001:length(mcmc_samples)]
+
+
+# plot the posterior
+hist(mcmc_samples_burnin, 
+     main="Posterior Distribution of theta (start val = 0.8, sd = 0.15)", 
+     xlab="theta", 
+     breaks=30,
+     col="lightgreen",
+     border="black",
+     probability=TRUE)  # Set to TRUE to normalize the histogram
+
+# add a density line
+lines(density(mcmc_samples_burnin), col="red", lwd=2)
+
+# desired values
+mean_theta <- mean(mcmc_samples)
+sd_theta <- sd(mcmc_samples)
+cred_low <- (mean_theta-1.96*sd_theta)
+cred_high <- (mean_theta+1.96*sd_theta)
+c(theta=mean_theta, stdv=sd_theta, cred_lo=cred_low, cred_hi = cred_high)
+```
+
+This posterior histogram and resulting estimated values are with a starting theta value of 0.8 and a proposed standard deviation of 0.15. Although these are both larger than the other values before, all of these estimates are still very similar to what we have been getting prior. That is most likely due to having 50,000 iterations with the first 5,000 being thrown out. Those discarded values most likely take a lot of the bias that starting at 0.8 had on the data.
+
+
+Instead of a standard uniform distribution, we will now use a beta distribution for the prior. This requires updates to the prior distribution as well as the mcmc function. In short, the beta prior must be defined as well as the mcmc function having to take values of a and b. Those updates are done below:
+
+```{r beta new}
+# log prior for beta disribution
+logpr_beta <- function(tha, a, b) {
+  if (tha <= 0 || tha >= 1) {
+    return(-Inf)  # Return -inf for all invalid theta values
+  }
+  log_prior <- (a - 1) * log(tha) + (b - 1) * log(1 - tha)
+  return(log_prior)
+}
+
+# mcmc using beta prior
+methast_beta <- function(n_iter, thetastartval, proposal_sd, n1, n2, n3, n4, a, b) {
+  thetas <- numeric(n_iter)
+  thetas[1] <- thetastartval
+  for (i in 2:n_iter) {
+    # new proposed value from the beta
+    tha_new <- rbeta(1, a, b)
+    
+    # if theta is valid
+    if (tha_new >= 0 && tha_new <= 1) {
+      log_accrat <- log_like(tha_new, n1, n2, n3, n4) + logpr_beta(tha_new, a, b) - 
+                              (log_like(thetas[i-1], n1, n2, n3, n4) + logpr_beta(thetas[i-1], a, b))
+      
+      if (log(runif(1)) < log_accrat) {
+        thetas[i] <- tha_new
+      } else {
+        thetas[i] <- thetas[i-1]
+      }
+    } else {
+      thetas[i] <- thetas[i-1]
+    } #if not valid theta value, skip over
+  } #ends for loop
+  return(thetas)
+}
+```
+
+
+Now that we have the updated functions to support using a beta distribution instead of a standard uniform prior, varying values of a starting theta and proposed standard deviation will be investigated below. We will use the same 3 variations for these values as we did for the standard uniform distribution.
+
+```{r use beta rep 1}
+# beta prior parameters of choice
+a <- 2
+b <- 5
+
+# rep 1: mcmc with beta prior
+mcmc_beta <- methast_beta(50000, 0.5, 0.05, st_g, st_w, su_g, su_w, a, b)
+
+# burn in
+mcmc_burn_beta <- mcmc_beta[5001:length(mcmc_beta)]
+
+
+# plot the posterior
+hist(mcmc_burn_beta,
+     main="Posterior Distribution of theta - beta (start val = 0.5, sd = 0.05)",
+     xlab="theta",
+     breaks=30,
+     probability=TRUE,
+     col="lightblue",
+     border="black")
+lines(density(mcmc_burn_beta), col="red", lwd=2)  # density
+
+mean_theta <- mean(mcmc_beta)
+sd_theta <- sd(mcmc_beta)
+cred_low <- (mean_theta-1.96*sd_theta)
+cred_high <- (mean_theta+1.96*sd_theta)
+c(theta=mean_theta, stdv=sd_theta, cred_lo=cred_low, cred_hi = cred_high)
+
+```
+
+This posterior distribution was created using a starting theta value of 0.5 and a proposed standard deviation value of 0.05. Even with a different prior distribution, the estimated values at the end of the 50,000 length chain yield a very similar result.
+
+```{r use beta rep 2}
+# rep 2: mcmc with beta prior
+mcmc_beta <- methast_beta(50000, 0.1, 0.05, st_g, st_w, su_g, su_w, a, b)
+
+# burn in
+mcmc_burn_beta <- mcmc_beta[5001:length(mcmc_beta)]
+
+
+# plot the posterior
+hist(mcmc_burn_beta,
+     main="Posterior Distribution of theta - beta (start val = 0.1, sd = 0.05)",
+     xlab="theta",
+     breaks=30,
+     probability=TRUE,
+     col="blue",
+     border="black")
+lines(density(mcmc_burn_beta), col="red", lwd=2)  # density
+
+mean_theta <- mean(mcmc_beta)
+sd_theta <- sd(mcmc_beta)
+cred_low <- (mean_theta-1.96*sd_theta)
+cred_high <- (mean_theta+1.96*sd_theta)
+c(theta=mean_theta, stdv=sd_theta, cred_lo=cred_low, cred_hi = cred_high)
+
+```
+
+
+This posterior distribution was created using a starting theta value of 0.1 and a proposed standard deviation value of 0.05. This plot seems every so slightly more concentrated in the center than the prior plot. There is little else to add to this plot due to the repetition in the results. 
+
+```{r use beta rep 3}
+# rep 3: mcmc with beta prior
+mcmc_beta <- methast_beta(50000, 0.8, 0.15, st_g, st_w, su_g, su_w, a, b)
+
+# burn in
+mcmc_burn_beta <- mcmc_beta[5001:length(mcmc_beta)]
+
+
+# plot the posterior
+hist(mcmc_burn_beta,
+     main="Posterior Distribution of theta - beta (start val = 0.8, sd = 0.15)",
+     xlab="theta",
+     breaks=30,
+     probability=TRUE,
+     col="lightgreen",
+     border="black")
+lines(density(mcmc_burn_beta), col="red", lwd=2)  # density
+
+mean_theta <- mean(mcmc_beta)
+sd_theta <- sd(mcmc_beta)
+cred_low <- (mean_theta-1.96*sd_theta)
+cred_high <- (mean_theta+1.96*sd_theta)
+c(theta=mean_theta, stdv=sd_theta, cred_lo=cred_low, cred_hi = cred_high)
+
+```
+
+Lastly, this posterior distribution was created with a starting theta value of 0.8 and a proposed standard deviation of 0.15. Although very far from the expected theta value of around 0.233, the shape of the prior distribution allows for this posterior to converge to the 0.233 value. That could be due to the 5000 burn in as well as the somewhat larger proposed standard deviation.
