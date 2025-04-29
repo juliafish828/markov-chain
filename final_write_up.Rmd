@@ -1,5 +1,5 @@
 ---
-title: "ST502 Project Julia Fish"
+title: "MLE Approximation Proofs with MCMC, Bootstrapping, and Gibbs Sampling"
 author: "Julia Fish"
 date: "2025-03-04"
 output: pdf_document
