@@ -16,7 +16,7 @@ We will use bootstrap to find an approximate standard deviation of the MLE:
 
 First, we will plug in the values that were given in the write up. That is, the counts for the observed data as well as defining the functions for log likelihood and the mle that will be used throughout this problem:
 
-```{r begin}
+```{r define functions and counts}
 # counts of each type
 st_g <- 1195
 st_w <- 750
@@ -56,7 +56,7 @@ Lastly, the value for the mle from the observed data given in the write up was c
 We will first consider non-parametric bootstrapping. To begin, we create a function that takes in all the counts of each group as well as the amount of resamples we wish to take. Then, a data set with all of the values for each group is created in order to take samples. Then, a sample with replacement occurs with this full observed data et, and the counts for each group is measured, and the mle is calculated for this sample. This is repeated the amount of times specified in the function (with default value 1000). Lastly, the function outputs the standard deviation of this estimated mle. This process is shown in the code below:
 
 
-```{r non}
+```{r nonparametric}
 set.seed(34)
 
 # nonparametric function
@@ -100,7 +100,7 @@ That function was used with the observed data given in the write up, and this ap
 
 For parametric bootstrapping, the process is similar. To start, a function is created that takes the count data, the observed mle from that count data, and the amount of times that this resampling should take place (with a default of 1000). Then, simulated data is created based on sampling from a multinomial distribution with the probabilities given in the write up. With that simulated data, the mle is calculated. This is repeated as many times as input into the function (with a default of 1000). Lastly, the standard deviation of these values is calculated after all of the desires estimated mle values are derived.
 
-```{r para}
+```{r parametric}
 # parametric
 p_bstr <- function(st_g, st_w, su_g, su_w, obs_mle, n_bstr = 1000) {
   bstr_mle <- numeric(n_bstr)
@@ -141,7 +141,7 @@ Next, we will use a standard uniform prior for theta in order to do MCMC on the 
 
 We start by defining the Metropolis-Hastings function. This is the method for MCMC that we will be using in this example due to its higher flexibility. This function takes the number of iterations, the desired start values for theta and the standard deviation, and the number of occurrences of each group. Then, for each iteration, the new theta value is compared against the previous theta value (starting at the propose start value). If this is within the acceptance ratio (subtracted due to dealing with logs), then the new value is accepted and becomes the new comparison value. If i is not in this region, the previous theta value remains the value in which to be compared. This continues for all iterations, and the theta vector is returned. This is demonstrated below:
 
-```{r trying}
+```{r Metropolis Hastings}
 # Met-Hast function for this example
 mcmc_methast <- function(n_iter, thetastartval, proposal_sd, n1, n2, n3, n4) {
   thetas <- numeric(n_iter)
@@ -177,7 +177,7 @@ mcmc_methast <- function(n_iter, thetastartval, proposal_sd, n1, n2, n3, n4) {
 
 Now, we will use the Metropolis Hastings function with varying starting theta and proposed standard deviation values. From these, we will gather an estimated theta value, an estimated standard deviation, and 95% credible intervals.
 
-```{r trying the most}
+```{r running mcmc}
 
 # rep 1: run mcmc
 mcmc_samples <- mcmc_methast(50000, 0.5, 0.05, st_g, st_w, su_g, su_w)
@@ -212,7 +212,7 @@ This histogram as well as the estimated theta value, standard deviation, and 95%
 
 
 
-```{r different value}
+```{r different value I}
 
 # rep 2: run MCMC
 mcmc_samples <- mcmc_methast(50000, 0.1, 0.05, st_g, st_w, su_g, su_w)
@@ -246,7 +246,7 @@ These values above are for a staring theta value of 0.1 with the same standard d
 
 
 
-```{r different value again}
+```{r different value II}
 
 # rep 3: run mcmc
 mcmc_samples <- mcmc_methast(50000, 0.1, 0.1, st_g, st_w, su_g, su_w)
@@ -280,7 +280,7 @@ This posterior histogram and resulting estimated values are with a starting thet
 
 Instead of a standard uniform distribution, we will now use a beta distribution for the prior. This requires updates to the prior distribution as well as the mcmc function. In short, the beta prior must be defined as well as the mcmc function having to take values of a and b. Those updates are done below:
 
-```{r beta new}
+```{r beta dist}
 # log prior for beta disribution
 logpr_beta <- function(tha, a, b) {
   if (tha <= 0 || tha >= 1) {
@@ -319,7 +319,7 @@ methast_beta <- function(n_iter, thetastartval, proposal_sd, n1, n2, n3, n4, a, 
 
 Now that we have the updated functions to support using a beta distribution instead of a standard uniform prior, varying values of a starting theta and proposed standard deviation will be investigated below. We will use the same 3 variations for these values as we did for the standard uniform distribution.
 
-```{r use beta rep 1}
+```{r beta value I}
 # beta prior parameters of choice
 a <- 2
 b <- 5
@@ -351,7 +351,7 @@ c(theta=mean_theta, stdv=sd_theta, cred_lo=cred_low, cred_hi = cred_high)
 
 This posterior distribution was created using a starting theta value of 0.5 and a proposed standard deviation value of 0.05. Even with a different prior distribution, the estimated values at the end of the 50,000 length chain yield a very similar result.
 
-```{r use beta rep 2}
+```{r beta value II}
 # rep 2: mcmc with beta prior
 mcmc_beta <- methast_beta(50000, 0.1, 0.05, st_g, st_w, su_g, su_w, a, b)
 
@@ -380,7 +380,7 @@ c(theta=mean_theta, stdv=sd_theta, cred_lo=cred_low, cred_hi = cred_high)
 
 This posterior distribution was created using a starting theta value of 0.1 and a proposed standard deviation value of 0.05. This plot seems every so slightly more concentrated in the center than the prior plot. There is little else to add to this plot due to the repetition in the results. 
 
-```{r use beta rep 3}
+```{r beta value III}
 # rep 3: mcmc with beta prior
 mcmc_beta <- methast_beta(50000, 0.8, 0.15, st_g, st_w, su_g, su_w, a, b)
 
